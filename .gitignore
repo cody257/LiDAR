@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Project data & outputs — point clouds, DEMs, and rasters can be huge
+out/
+outputs/
+output/
+data/
+tmp/
+*.tif
+*.tiff
+*.laz
+*.las
+*.copc.laz
+*.bpf
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
