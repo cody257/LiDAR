@@ -25,3 +25,22 @@ def build_pipeline(bbox_3857, ept_url, out_tif, resolution=1.0,
             },
         ]
     }
+
+
+def _pipeline(pipeline_dict):
+    """Wrap PDAL construction so tests can monkeypatch it."""
+    import pdal
+    return pdal.Pipeline(json.dumps(pipeline_dict))
+
+
+def fetch_dtm(bbox_3857, resource, out_tif, resolution=1.0):
+    """Run the pipeline; return out_tif. Raise if zero points (usually a CRS slip)."""
+    pipe = build_pipeline(bbox_3857, resource.ept_url, out_tif, resolution,
+                          resource.target_srs)
+    n = _pipeline(pipe).execute()
+    if n == 0:
+        raise RuntimeError(
+            "No points returned. Check that bbox bounds are in EPSG:3857 and "
+            "inside the resource coverage."
+        )
+    return out_tif
