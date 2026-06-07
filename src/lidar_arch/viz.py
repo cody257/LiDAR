@@ -74,3 +74,21 @@ def lrm(dtm_tif, out_tif, kernel_radius_m=15, png=True):
     if png:
         _write_png(out_tif, png_path)
     return Path(out_tif), png_path
+
+
+def svf(dtm_tif, out_tif, n_dir=16, r_max=10, png=True):
+    """Sky-View Factor via rvt-py. Returns (geotiff, png)."""
+    import rvt.vis
+    arr, profile = _read(dtm_tif)
+    res = _pixel_size(profile)
+    result = rvt.vis.sky_view_factor(
+        dem=arr, resolution=res,
+        compute_svf=True, compute_asvf=False, compute_opns=False,
+        svf_n_dir=n_dir, svf_r_max=r_max,
+    )
+    svf_arr = result["svf"]
+    _write_tif(out_tif, svf_arr, profile)
+    png_path = Path(out_tif).with_suffix(".png")
+    if png:
+        _write_png(out_tif, png_path)
+    return Path(out_tif), png_path
