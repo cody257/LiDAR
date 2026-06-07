@@ -159,3 +159,30 @@ def svf(dtm_tif, out_tif, n_dir=16, r_max=10, png=True):
     if png:
         _write_colorized_png(png_path, svf_arr, "gray", lo=2, hi=98)
     return Path(out_tif), png_path
+
+
+def _positive_openness(arr, res, n_dir, r_max):
+    """Positive topographic openness (degrees) via rvt sky_view_factor."""
+    import rvt.vis
+    return rvt.vis.sky_view_factor(
+        dem=arr, resolution=res,
+        compute_svf=False, compute_asvf=False, compute_opns=True,
+        svf_n_dir=n_dir, svf_r_max=r_max,
+    )["opns"]
+
+
+def openness(dtm_tif, out_tif, n_dir=16, r_max=10, png=True):
+    """Positive topographic openness via rvt-py. Returns (geotiff, png).
+
+    Convex terrain (peaks, ridges) reads high; concave terrain (pits, ditches)
+    reads low, so it complements SVF for spotting archaeological earthworks.
+    Preview: gray colormap, clip (2, 98).
+    """
+    arr, profile = _read(dtm_tif)
+    res = _pixel_size(profile)
+    opns_arr = _positive_openness(arr, res, n_dir, r_max)
+    _write_tif(out_tif, opns_arr, profile)
+    png_path = Path(out_tif).with_suffix(".png")
+    if png:
+        _write_colorized_png(png_path, opns_arr, "gray", lo=2, hi=98)
+    return Path(out_tif), png_path
