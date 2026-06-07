@@ -1,0 +1,21 @@
+# LiDAR archaeology toolchain (conda-forge).
+#   conda env create -f environment.yml
+#   conda activate lidar-arch
+#   pip install --no-deps rvt-py     # installed separately so pip won't try to build GDAL
+#
+# (scripts/setup_env.ps1 automates all of the above on Windows.)
+name: lidar-arch
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pdal
+  - python-pdal
+  - gdal
+  - rasterio
+  - pyproj
+  - numpy
+  - scipy
+  - click
+  - pytest
+  - pip
