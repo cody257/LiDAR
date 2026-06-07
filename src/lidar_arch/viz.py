@@ -27,6 +27,17 @@ def _write_tif(out_tif, arr, profile):
     return out_tif
 
 
+def _write_tif_rgb(out_tif, rgb_uint8, profile):
+    """Write an (H, W, 3) uint8 RGB array as a 3-band GeoTIFF (same CRS/transform)."""
+    p = profile.copy()
+    p.update(dtype="uint8", count=3)
+    p.pop("nodata", None)
+    with rasterio.open(out_tif, "w", **p) as dst:
+        for b in range(3):
+            dst.write(rgb_uint8[..., b], b + 1)
+    return out_tif
+
+
 def _write_png(src_tif, png_path):
     """8-bit auto-stretched PNG preview of a single-band raster."""
     gdal.Translate(str(png_path), str(src_tif), format="PNG",
@@ -185,4 +196,49 @@ def openness(dtm_tif, out_tif, n_dir=16, r_max=10, png=True):
     png_path = Path(out_tif).with_suffix(".png")
     if png:
         _write_colorized_png(png_path, opns_arr, "gray", lo=2, hi=98)
+    return Path(out_tif), png_path
+
+
+def rrim(dtm_tif, out_tif, n_dir=16, r_max=10, png=True):
+    """Red Relief Image Map: a self-contained slope x openness composite.
+
+    Slope drives a Reds colormap (flat ~white, steep -> dark red); the
+    positive-minus-negative openness difference drives brightness (ridges
+    bright, hollows dark) via a multiply blend. Result is a 3-band uint8 RGB
+    GeoTIFF plus an RGB PNG. Returns (geotiff, png).
+    """
+    from matplotlib import colormaps
+    arr, profile = _read(dtm_tif)
+    res = _pixel_size(profile)
+
+    # Slope in degrees from the array (NaNs propagate).
+    gy, gx = np.gradient(arr, res)
+    slope_deg = np.degrees(np.arctan(np.hypot(gx, gy)))
+
+    # Openness difference: ridges > 0, hollows < 0.
+    pos = _positive_openness(arr, res, n_dir, r_max)
+    neg = _positive_openness(-arr, res, n_dir, r_max)
+    diff = pos - neg
+
+    # Red layer: steepness -> deeper red.
+    t_slope = np.clip(slope_deg / 45.0, 0.0, 1.0)
+    red = colormaps["Reds"](t_slope)[..., :3]          # (H, W, 3) float in [0, 1]
+
+    # Lightness from openness difference, centred on 0.5.
+    fd = diff[np.isfinite(diff)]
+    v = float(np.percentile(np.abs(fd), 98)) if fd.size else 1.0
+    if v == 0.0:
+        v = 1.0
+    light = np.clip(0.5 + diff / (2.0 * v), 0.0, 1.0)
+
+    # Multiply blend; non-finite cells -> white.
+    rrim_f = red * light[..., None]
+    rgb = (rrim_f * 255.0).astype("uint8")
+    finite = np.isfinite(slope_deg) & np.isfinite(diff)
+    rgb[~finite] = (255, 255, 255)
+
+    _write_tif_rgb(out_tif, rgb, profile)
+    png_path = Path(out_tif).with_suffix(".png")
+    if png:
+        _write_png_rgb(png_path, rgb)
     return Path(out_tif), png_path
