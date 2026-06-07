@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lidar-arch"
+version = "0.1.0"
+description = "Archaeology-optimized terrain visualizations from USGS 3DEP LiDAR."
+requires-python = ">=3.11"
+dependencies = ["click", "numpy", "scipy", "rasterio", "pyproj"]
+# pdal, gdal (osgeo), and rvt-py are provided by the conda env, not pip-resolvable here.
+
+[project.scripts]
+lidar-arch = "lidar_arch.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lidar_arch"]
+
+[tool.pytest.ini_options]
+markers = ["slow: end-to-end tests that hit the network and full toolchain"]
+testpaths = ["tests"]
+addopts = "-q"
