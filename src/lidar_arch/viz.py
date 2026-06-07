@@ -82,17 +82,35 @@ def _write_png_rgb(path, rgb_uint8):
     return Path(path)
 
 
+def _write_colorized_png(path, arr, cmap_name, lo=2, hi=98, symmetric=False,
+                         vmin=None, vmax=None):
+    """Colorize a 2-D array with a clipped matplotlib cmap and write an RGB PNG.
+
+    If vmin/vmax are given they override the percentile clip; otherwise the
+    bounds come from _clip_range(arr, lo, hi, symmetric).
+    """
+    if vmin is None or vmax is None:
+        vmin, vmax = _clip_range(arr, lo=lo, hi=hi, symmetric=symmetric)
+    rgb = _colorize(arr, cmap_name, vmin, vmax)
+    return _write_png_rgb(path, rgb)
+
+
 def _pixel_size(profile):
     return abs(profile["transform"].a)
 
 
 def slope(dtm_tif, out_tif, png=True):
-    """Slope in degrees via gdaldem. Returns (geotiff_path, png_path)."""
+    """Slope in degrees via gdaldem. Returns (geotiff_path, png_path).
+
+    Preview: inferno colormap, vmin=0, vmax=p98 (flat dark, steep bright).
+    """
     gdal.DEMProcessing(str(out_tif), str(dtm_tif), "slope",
                        slopeFormat="degree", computeEdges=True)
     png_path = Path(out_tif).with_suffix(".png")
     if png:
-        _write_png(out_tif, png_path)
+        slope_arr, _ = _read(out_tif)
+        _, vmax = _clip_range(slope_arr, hi=98)
+        _write_colorized_png(png_path, slope_arr, "inferno", vmin=0.0, vmax=vmax)
     return Path(out_tif), png_path
 
 
@@ -120,7 +138,8 @@ def lrm(dtm_tif, out_tif, kernel_radius_m=15, png=True):
     _write_tif(out_tif, lrm_arr, profile)
     png_path = Path(out_tif).with_suffix(".png")
     if png:
-        _write_png(out_tif, png_path)
+        # Diverging RdBu_r centred at 0: mounds red, hollows blue.
+        _write_colorized_png(png_path, lrm_arr, "RdBu_r", hi=98, symmetric=True)
     return Path(out_tif), png_path
 
 
@@ -138,5 +157,5 @@ def svf(dtm_tif, out_tif, n_dir=16, r_max=10, png=True):
     _write_tif(out_tif, svf_arr, profile)
     png_path = Path(out_tif).with_suffix(".png")
     if png:
-        _write_png(out_tif, png_path)
+        _write_colorized_png(png_path, svf_arr, "gray", lo=2, hi=98)
     return Path(out_tif), png_path
