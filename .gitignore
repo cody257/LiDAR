@@ -34,3 +34,10 @@ Thumbs.db
 
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
+.claude/launch.json
+
+# Web app build artifacts / large intermediates
+web/node_modules/
+web/.wrangler/
+web/data/
+node_modules/

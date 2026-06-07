@@ -1,0 +1,12 @@
+{
+  "name": "lidar-arch-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "lidar-arch Milestone A — USGS 3DEP coverage picker (static front-end for Cloudflare Pages).",
+  "scripts": {
+    "dev": "wrangler pages dev public --port 8788"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

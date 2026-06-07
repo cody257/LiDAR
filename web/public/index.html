@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lidar-arch — USGS 3DEP coverage picker</title>
+<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+<link href="styles.css" rel="stylesheet" />
+</head>
+<body>
+  <aside id="side">
+    <header id="side-head">
+      <h1>lidar-arch</h1>
+      <p class="purpose">Pick an area, see which USGS 3DEP LiDAR collection covers it, and get the command to run.</p>
+    </header>
+
+    <button id="draw-btn" class="btn">Draw box on map</button>
+
+    <div class="field-group">
+      <div class="grid2">
+        <div class="field"><label for="in-w">min lon</label><input id="in-w" type="number" step="0.0001" inputmode="decimal"></div>
+        <div class="field"><label for="in-s">min lat</label><input id="in-s" type="number" step="0.0001" inputmode="decimal"></div>
+        <div class="field"><label for="in-e">max lon</label><input id="in-e" type="number" step="0.0001" inputmode="decimal"></div>
+        <div class="field"><label for="in-n">max lat</label><input id="in-n" type="number" step="0.0001" inputmode="decimal"></div>
+      </div>
+    </div>
+
+    <section id="result" class="result">
+      <div class="empty muted">Draw a box on the map, or type the four corners above, to see 3DEP coverage and the command.</div>
+    </section>
+
+    <footer id="side-foot" class="muted">
+      <span id="cov-count">Loading coverage…</span>
+    </footer>
+  </aside>
+
+  <div id="map"></div>
+
+  <div id="legend" class="pill">
+    <div class="legend-title">Point density (pts/m²)</div>
+    <div class="legend-ramp" id="legend-ramp"></div>
+    <div class="legend-scale">
+      <span>0.2</span><span class="legend-good" id="legend-good">8 · earthworks</span><span>40+</span>
+    </div>
+  </div>
+
+<script src="app.js"></script>
+</body>
+</html>
