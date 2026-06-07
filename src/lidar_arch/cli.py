@@ -3,6 +3,8 @@ from pathlib import Path
 import click
 from . import geo, resources, fetch, dem, viz
 
+KNOWN_PRODUCTS = ("svf", "lrm", "slope", "openness", "rrim")
+
 
 @click.group()
 def cli():
@@ -17,8 +19,17 @@ def cli():
               help="Output directory.")
 @click.option("--resolution", type=float, default=1.0, show_default=True,
               help="DTM grid resolution in metres.")
-def run(bbox, out_dir, resolution):
-    """Fetch -> DTM -> SVF/LRM/Slope for a bounding box (sane defaults)."""
+@click.option("--products", default="svf,lrm,slope,openness,rrim", show_default=True,
+              help="Comma-separated visualization products to generate.")
+def run(bbox, out_dir, resolution, products):
+    """Fetch -> DTM -> visualization products for a bounding box (sane defaults)."""
+    names = [p.strip() for p in products.split(",") if p.strip()]
+    unknown = [n for n in names if n not in KNOWN_PRODUCTS]
+    if unknown:
+        raise click.ClickException(
+            f"Unknown product(s): {', '.join(unknown)}. "
+            f"Choose from: {', '.join(KNOWN_PRODUCTS)}.")
+
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     res = resources.resolve()
@@ -31,8 +42,7 @@ def run(bbox, out_dir, resolution):
     dtm_raw = fetch.fetch_dtm(bbox_3857, res, out / "dtm_raw.tif", resolution)
     click.echo("Filling DTM holes ...")
     dtm = dem.fill_holes(dtm_raw, out / "dtm.tif")
-    click.echo("Computing SVF / LRM / Slope ...")
-    viz.svf(dtm, out / "svf.tif")
-    viz.lrm(dtm, out / "lrm.tif")
-    viz.slope(dtm, out / "slope.tif")
+    click.echo(f"Computing {', '.join(names)} ...")
+    for name in names:
+        getattr(viz, name)(dtm, out / f"{name}.tif")
     click.echo(f"Done. Outputs in {out}")

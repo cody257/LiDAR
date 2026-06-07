@@ -2,23 +2,49 @@ from pathlib import Path
 from click.testing import CliRunner
 from lidar_arch import cli, fetch, dem, viz
 
+BBOX = ["-111.9856", "33.4452", "-111.9816", "33.4482"]
 
-def test_run_orchestrates(monkeypatch, tmp_path):
-    calls = []
+
+def _patch_pipeline(monkeypatch, calls):
     monkeypatch.setattr(fetch, "fetch_dtm",
                         lambda *a, **k: (calls.append("fetch"), a[2])[1])
     monkeypatch.setattr(dem, "fill_holes",
                         lambda src, out, **k: (calls.append("fill"), out)[1])
-    monkeypatch.setattr(viz, "svf", lambda *a, **k: (calls.append("svf"), (a[1], a[1]))[1])
-    monkeypatch.setattr(viz, "lrm", lambda *a, **k: (calls.append("lrm"), (a[1], a[1]))[1])
-    monkeypatch.setattr(viz, "slope", lambda *a, **k: (calls.append("slope"), (a[1], a[1]))[1])
+    for name in ("svf", "lrm", "slope", "openness", "rrim"):
+        monkeypatch.setattr(
+            viz, name,
+            (lambda n: lambda *a, **k: (calls.append(n), (a[1], a[1]))[1])(name))
 
+
+def test_run_orchestrates_default(monkeypatch, tmp_path):
+    calls = []
+    _patch_pipeline(monkeypatch, calls)
+    out = tmp_path / "o"
+    r = CliRunner().invoke(cli.cli, ["run", "--bbox", *BBOX, "--out", str(out)])
+    assert r.exit_code == 0, r.output
+    assert calls == ["fetch", "fill", "svf", "lrm", "slope", "openness", "rrim"]
+
+
+def test_run_products_subset(monkeypatch, tmp_path):
+    calls = []
+    _patch_pipeline(monkeypatch, calls)
     out = tmp_path / "o"
     r = CliRunner().invoke(cli.cli, [
-        "run", "--bbox", "-111.9856", "33.4452", "-111.9816", "33.4482",
-        "--out", str(out)])
+        "run", "--bbox", *BBOX, "--out", str(out), "--products", "svf,slope"])
     assert r.exit_code == 0, r.output
-    assert calls == ["fetch", "fill", "svf", "lrm", "slope"]
+    assert calls == ["fetch", "fill", "svf", "slope"]
+
+
+def test_run_rejects_unknown_product(monkeypatch, tmp_path):
+    calls = []
+    _patch_pipeline(monkeypatch, calls)
+    out = tmp_path / "o"
+    r = CliRunner().invoke(cli.cli, [
+        "run", "--bbox", *BBOX, "--out", str(out), "--products", "svf,bogus"])
+    assert r.exit_code != 0
+    assert "bogus" in r.output.lower()
+    # nothing should have been computed
+    assert "svf" not in calls
 
 
 def test_run_rejects_out_of_coverage(tmp_path):
