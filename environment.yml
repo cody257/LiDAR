@@ -17,5 +17,6 @@ dependencies:
   - numpy
   - scipy
   - click
+  - matplotlib-base
   - pytest
   - pip
