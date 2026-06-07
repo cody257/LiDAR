@@ -6,8 +6,18 @@ One command from a bounding box to archaeology-grade terrain visualizations
 ## Setup (Windows)
 
     pwsh -File scripts/setup_env.ps1     # installs Miniforge + the lidar-arch env
+                                         # and does the editable `pip install -e .`
+
+Miniforge installs to `%USERPROFILE%\miniforge3` without changing PATH. To put the
+`conda` / `lidar-arch` commands on your PATH, enable conda once and restart the shell:
+
+    & "$env:USERPROFILE\miniforge3\Scripts\conda.exe" init powershell
+    # restart the shell, then:
     conda activate lidar-arch
-    pip install -e .
+
+Prefer not to touch your shell profile? Run everything through conda instead:
+
+    & "$env:USERPROFILE\miniforge3\Scripts\conda.exe" run -n lidar-arch lidar-arch run ...
 
 ## Use
 

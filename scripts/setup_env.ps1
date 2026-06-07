@@ -59,6 +59,11 @@ try {
     & $envPy -m pip install --no-deps rvt-py 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { Log "WARN: rvt-py install failed (exit $LASTEXITCODE) — resolve during build." }
 
+    # --- 3b. editable install of this package (so `lidar-arch` is runnable) ----
+    Log "Editable install of lidar-arch..."
+    & $envPy -m pip install -e $root 2>&1 | Tee-Object -FilePath $log -Append
+    if ($LASTEXITCODE -ne 0) { Log "WARN: editable install failed (exit $LASTEXITCODE)" }
+
     # --- 4. verify ------------------------------------------------------------
     Log "Verifying..."
     & $envPy -c "import pdal,rasterio,pyproj,numpy,scipy,click; print('python deps OK')" 2>&1 | Tee-Object -FilePath $log -Append
