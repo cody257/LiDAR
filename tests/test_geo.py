@@ -19,3 +19,10 @@ def test_roundtrip_recovers_latlon():
     back = geo.to_4326(xmin, ymin)
     assert abs(back[0] - lon) < 1e-6
     assert abs(back[1] - lat) < 1e-6
+
+
+def test_bbox_within_extent():
+    inside = (-12466000.0, 3953000.0, -12465000.0, 3954000.0)
+    outside = (-13000000.0, 3953000.0, -12999000.0, 3954000.0)
+    assert geo.bbox_within(inside, EXTENT) is True
+    assert geo.bbox_within(outside, EXTENT) is False

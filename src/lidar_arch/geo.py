@@ -16,3 +16,10 @@ def bbox_to_3857(min_lon, min_lat, max_lon, max_lat):
 def to_4326(x, y):
     """EPSG:3857 (x, y) -> (lon, lat)."""
     return _TO_4326.transform(x, y)
+
+
+def bbox_within(bbox_3857, extent_3857):
+    """True if bbox_3857 (xmin,ymin,xmax,ymax) lies fully inside extent_3857."""
+    xmin, ymin, xmax, ymax = bbox_3857
+    exmin, eymin, exmax, eymax = extent_3857
+    return exmin <= xmin and eymin <= ymin and xmax <= exmax and ymax <= eymax
