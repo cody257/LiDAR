@@ -17,7 +17,7 @@ code,.mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 #side{
   position:absolute; top:0; left:0; bottom:0; width:var(--side-w);
   background:var(--bg); border-right:1px solid var(--line);
-  padding:16px 16px 0; overflow:auto; z-index:6;
+  padding:16px 16px 0; overflow-x:hidden; overflow-y:auto; z-index:6;
   display:flex; flex-direction:column;
 }
 #side-head h1{ font-size:18px; margin:0 0 3px; letter-spacing:-.01em; }
@@ -34,9 +34,9 @@ code,.mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 
 .field-group{ margin-top:12px; }
 .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.field{ display:flex; flex-direction:column; gap:3px; }
+.field{ display:flex; flex-direction:column; gap:3px; min-width:0; }
 .field label{ font-size:11px; color:var(--muted); }
-.field input{ padding:7px 8px; border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; }
+.field input{ width:100%; min-width:0; padding:7px 8px; border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; }
 .field input:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(184,85,46,.15); }
 
 /* ---------- results ---------- */
