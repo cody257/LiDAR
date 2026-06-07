@@ -46,3 +46,31 @@ def slope(dtm_tif, out_tif, png=True):
     if png:
         _write_png(out_tif, png_path)
     return Path(out_tif), png_path
+
+
+from scipy.ndimage import uniform_filter
+
+
+def _smooth_nan(arr, radius_px):
+    """NaN-aware box mean. Cells that are NaN stay NaN; others use valid neighbours."""
+    valid = np.isfinite(arr)
+    a0 = np.where(valid, arr, 0.0)
+    w = valid.astype("float64")
+    size = 2 * radius_px + 1
+    num = uniform_filter(a0, size=size, mode="nearest")
+    den = uniform_filter(w, size=size, mode="nearest")
+    out = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+    return np.where(valid, out, np.nan)
+
+
+def lrm(dtm_tif, out_tif, kernel_radius_m=15, png=True):
+    """Local Relief Model: DTM minus its low-pass. Returns (geotiff, png)."""
+    arr, profile = _read(dtm_tif)
+    radius_px = max(1, int(round(kernel_radius_m / _pixel_size(profile))))
+    trend = _smooth_nan(arr, radius_px)
+    lrm_arr = arr - trend
+    _write_tif(out_tif, lrm_arr, profile)
+    png_path = Path(out_tif).with_suffix(".png")
+    if png:
+        _write_png(out_tif, png_path)
+    return Path(out_tif), png_path
