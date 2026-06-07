@@ -34,6 +34,54 @@ def _write_png(src_tif, png_path):
     return png_path
 
 
+def _clip_range(arr, lo=2, hi=98, symmetric=False):
+    """Percentile clip bounds from the finite values of arr.
+
+    Returns (vmin, vmax). If symmetric, v = percentile(|finite|, hi) and the
+    range is centred at zero: (-v, +v) (for diverging colormaps like RdBu_r).
+    """
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return (0.0, 1.0)
+    if symmetric:
+        v = float(np.percentile(np.abs(finite), hi))
+        if v == 0.0:
+            v = 1.0
+        return (-v, v)
+    vmin = float(np.percentile(finite, lo))
+    vmax = float(np.percentile(finite, hi))
+    if vmin == vmax:
+        vmax = vmin + 1.0
+    return (vmin, vmax)
+
+
+def _colorize(arr, cmap_name, vmin, vmax):
+    """Map a 2-D array to an (H, W, 3) uint8 RGB image with a matplotlib cmap.
+
+    arr is normalised to [0, 1] over [vmin, vmax] (clipped), the colormap is
+    applied, and the alpha channel dropped. Non-finite cells (NaN / nodata)
+    are rendered white so previews carry no garbage.
+    """
+    from matplotlib import colormaps
+    finite = np.isfinite(arr)
+    span = vmax - vmin
+    if span == 0:
+        span = 1.0
+    norm = np.clip((np.where(finite, arr, vmin) - vmin) / span, 0.0, 1.0)
+    cmap = colormaps[cmap_name]
+    rgba = cmap(norm)                       # (H, W, 4) float in [0, 1]
+    rgb = (rgba[..., :3] * 255).round().astype("uint8")
+    rgb[~finite] = (255, 255, 255)          # NaN / nodata -> white
+    return rgb
+
+
+def _write_png_rgb(path, rgb_uint8):
+    """Write an (H, W, 3) uint8 array as an RGB PNG (matplotlib-base, no Pillow)."""
+    import matplotlib.image as mpimg
+    mpimg.imsave(str(path), rgb_uint8)
+    return Path(path)
+
+
 def _pixel_size(profile):
     return abs(profile["transform"].a)
 
