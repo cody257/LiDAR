@@ -43,6 +43,7 @@ def run(bbox, out_dir, resolution, products):
     click.echo("Filling DTM holes ...")
     dtm = dem.fill_holes(dtm_raw, out / "dtm.tif")
     click.echo(f"Computing {', '.join(names)} ...")
+    filenames = {"openness": "opns"}  # product keyword -> output stem (matches README/rvt term)
     for name in names:
-        getattr(viz, name)(dtm, out / f"{name}.tif")
+        getattr(viz, name)(dtm, out / f"{filenames.get(name, name)}.tif")
     click.echo(f"Done. Outputs in {out}")
