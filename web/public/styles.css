@@ -89,7 +89,13 @@ code,.mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 }
 .error .detail{ color:#b04a4a; font-size:11px; margin-top:3px; }
 
+/* resolution (detail vs speed) control — sits above the Run button */
+.res-ctrl{ margin-bottom:10px; }
+.res-ctrl .ov-label{ display:flex; justify-content:space-between; align-items:baseline; }
+.res-hint{ font-size:10px; font-weight:400; color:var(--muted); }
+
 .overlay-ctrl{ margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+.ov-grid{ font-size:11.5px; color:var(--ink); font-weight:600; margin-bottom:9px; }
 .ov-label{ font-size:11px; color:var(--muted); margin-bottom:5px; }
 .ov-label.ov-op{ margin-top:11px; display:flex; justify-content:space-between; }
 .ov-label #op-val{ color:var(--ink); font-weight:600; }

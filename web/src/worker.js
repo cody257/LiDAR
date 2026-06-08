@@ -43,6 +43,8 @@ async function handleRun(request, env) {
 
   const bbox = req.bbox;
   const resource = req.resource || null;
+  // Optional grid resolution (metres). Absent => container/CLI default to auto.
+  const resolution = typeof req.resolution === "number" ? req.resolution : null;
   let products = Array.isArray(req.products)
     ? req.products.filter((p) => PRODUCTS.includes(p))
     : [];
@@ -51,7 +53,7 @@ async function handleRun(request, env) {
     return json({ error: "bbox must be [west, south, east, north] numbers" }, 400);
   }
 
-  const key = cacheKey(bbox, resource);
+  const key = cacheKey(bbox, resource, resolution);
 
   // per-product R2 cache check
   const present = {};
@@ -71,7 +73,7 @@ async function handleRun(request, env) {
       resp = await fetch(`${base}/run`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bbox, resource, products: missing }),
+        body: JSON.stringify({ bbox, resource, products: missing, resolution }),
       });
     } catch (e) {
       return json({ error: "pipeline container unreachable", detail: String(e) }, 502);
@@ -99,8 +101,9 @@ async function handleRun(request, env) {
   });
 }
 
-function cacheKey(bbox, resource) {
-  const s = bbox.map((n) => Number(n).toFixed(5)).join(",") + "|" + (resource || "");
+function cacheKey(bbox, resource, resolution) {
+  const s = bbox.map((n) => Number(n).toFixed(5)).join(",") + "|" + (resource || "")
+    + "|r" + (resolution ?? "auto");
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
   return "b" + (h >>> 0).toString(36);

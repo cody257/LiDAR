@@ -46,6 +46,7 @@ class Handler(BaseHTTPRequestHandler):
             if not (isinstance(bbox, list) and len(bbox) == 4):
                 return self._json(400, {"error": "bbox must be [w, s, e, n]"})
             resource = req.get("resource")
+            resolution = req.get("resolution")
             products = req.get("products") or ["lrm", "rrim", "svf"]
         except Exception as exc:  # noqa: BLE001 - report any bad input
             return self._json(400, {"error": f"bad request: {exc}"})
@@ -55,6 +56,8 @@ class Handler(BaseHTTPRequestHandler):
                    "--out", out, "--products", ",".join(products)]
             if resource:
                 cmd += ["--resource", str(resource)]
+            if resolution is not None:
+                cmd += ["--resolution", str(resolution)]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode != 0:
                 return self._json(500, {"error": "pipeline failed",

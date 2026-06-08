@@ -18,7 +18,14 @@ const GOOD_DENSITY = 8;          // "good for subtle earthworks" threshold
 const LEGEND_MIN = 0.2, LEGEND_MAX = 40; // legend axis (data goes higher but flattens visually)
 
 const EMPTY = { type: "FeatureCollection", features: [] };
-const state = { bbox: null, matches: [], best: null };
+// `resolution` is the user's choice: "auto" or a numeric metre value (1/2/5).
+const state = { bbox: null, matches: [], best: null, resolution: "auto" };
+const RES_CHOICES = [
+  { key: "auto", label: "Auto" },
+  { key: 1, label: "1 m" },
+  { key: 2, label: "2 m" },
+  { key: 5, label: "5 m" },
+];
 
 // ---- pipeline run / overlay ----
 const PRODUCTS = [
@@ -212,6 +219,36 @@ function utmLabel(bbox) {
   return { zone: z, epsg: 26900 + z, label: `UTM ${z}N / EPSG:${26900 + z}` };
 }
 
+// ---------------- resolution (mirrors src/lidar_arch/geo.py) ----------------
+// Approximate ground area (km^2) of a lon/lat bbox via cos(lat) scaling.
+// One degree latitude ~= 111.32 km; longitude shrinks by cos(center latitude).
+function bboxAreaKm2(bbox) {
+  const [minLon, minLat, maxLon, maxLat] = bbox;
+  const centerLat = (minLat + maxLat) / 2.0;
+  const heightKm = Math.abs(maxLat - minLat) * 111.32;
+  const widthKm = Math.abs(maxLon - minLon) * 111.32 * Math.cos((centerLat * Math.PI) / 180);
+  return widthKm * heightKm;
+}
+// Pick a DTM grid resolution (m) from area: <0.25 -> 1.0; <2 -> 2.0; <10 -> 3.0; else 5.0.
+function autoResolution(bbox) {
+  const area = bboxAreaKm2(bbox);
+  if (area < 0.25) return 1.0;
+  if (area < 2.0) return 2.0;
+  if (area < 10.0) return 3.0;
+  return 5.0;
+}
+// The numeric resolution that will actually be sent for the current state.
+function resolvedResolution() {
+  if (state.resolution === "auto") {
+    return state.bbox ? autoResolution(state.bbox) : null;
+  }
+  return state.resolution;
+}
+// Tidy resolution for labels: drop a trailing ".0" (5.0 -> "5", keep 2.5).
+function fmtRes(v) {
+  return Number.isInteger(v) ? String(v) : String(Number(v));
+}
+
 // ---------------- quality hint ----------------
 function qualityHint(density) {
   if (density == null) return { cls: "sparse", text: "density unknown" };
@@ -309,6 +346,9 @@ async function runBox() {
   running = true;
   render(); // re-render to show the spinner/disabled state
 
+  // Resolve "auto" to a concrete number now so the overlay can report it.
+  const resolution = resolvedResolution();
+
   try {
     const res = await fetch("/api/run", {
       method: "POST",
@@ -317,6 +357,7 @@ async function runBox() {
         bbox: state.bbox,
         resource: state.best.url,
         products: PRODUCTS.map((p) => p.key),
+        resolution,
       }),
     });
     if (!res.ok) {
@@ -334,6 +375,7 @@ async function runBox() {
       bbox: data.bbox || state.bbox,
       product: DEFAULT_PRODUCT,
       opacity: run ? run.opacity : 0.85,
+      resolution, // the metre value this overlay was gridded at
     };
     running = false;
     showOverlay();
@@ -480,6 +522,7 @@ function render(errorMsg) {
   // ---- run the pipeline on the best pick ----
   html += `<div class="row">
     <h4>Run pipeline (best pick)</h4>
+    ${resolutionControlHtml()}
     <button class="btn" id="run-btn"${running ? " disabled" : ""}>
       ${running ? '<span class="spinner"></span>Running pipeline… (~10 s)' : "Run this box"}
     </button>`;
@@ -503,7 +546,38 @@ function render(errorMsg) {
   const runBtn = document.getElementById("run-btn");
   if (runBtn) runBtn.addEventListener("click", runBox);
   document.getElementById("copy-btn").addEventListener("click", copyCommand);
+  wireResolutionControl();
   wireOverlayControls();
+}
+
+// Resolution control: Auto / 1 m / 2 m / 5 m. Auto shows the resolved value.
+function resolutionControlHtml() {
+  const segs = RES_CHOICES.map((c) => {
+    const active = state.resolution === c.key ? " active" : "";
+    let label = c.label;
+    if (c.key === "auto" && state.bbox) {
+      label = `Auto (${fmtRes(autoResolution(state.bbox))} m)`;
+    }
+    return `<button class="seg${active}" data-res="${c.key}">${label}</button>`;
+  }).join("");
+  return `<div class="res-ctrl">
+    <div class="ov-label">Grid resolution <span class="res-hint">detail ↔ speed</span></div>
+    <div class="seg-row">${segs}</div>
+  </div>`;
+}
+
+function wireResolutionControl() {
+  document.querySelectorAll(".seg[data-res]").forEach((b) =>
+    b.addEventListener("click", () => setResolution(b.dataset.res))
+  );
+}
+
+// Update the resolution choice. "auto" stays a string; numbers are parsed.
+function setResolution(val) {
+  const next = val === "auto" ? "auto" : Number(val);
+  if (state.resolution === next) return;
+  state.resolution = next;
+  render();
 }
 
 // Overlay controls (product toggle + opacity + clear) — only when an overlay is live.
@@ -513,7 +587,11 @@ function overlayControlsHtml() {
     `<button class="seg${p.key === run.product ? " active" : ""}" data-product="${p.key}">${p.label}</button>`
   ).join("");
   const opct = Math.round(run.opacity * 100);
+  const grid = run.resolution != null
+    ? `<div class="ov-grid">Gridded at ${fmtRes(run.resolution)} m</div>`
+    : "";
   return `<div class="overlay-ctrl">
+    ${grid}
     <div class="ov-label">Overlay product</div>
     <div class="seg-row">${toggles}</div>
     <div class="ov-label ov-op">Opacity <span id="op-val">${opct}%</span></div>
