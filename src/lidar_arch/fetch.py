@@ -12,7 +12,11 @@ def build_pipeline(bbox_3857, ept_url, out_tif, resolution=1.0,
     bounds = f"([{xmin}, {xmax}], [{ymin}, {ymax}])"  # ([xmin,xmax],[ymin,ymax]) in 3857
     return {
         "pipeline": [
-            {"type": "readers.ept", "filename": ept_url, "bounds": bounds},
+            # `resolution` caps the EPT octree depth read to roughly the grid
+            # cell-edge length (3857 metres ~= ground metres at AZ latitudes), so
+            # a coarse grid doesn't stream full (~18 pts/m2) point density.
+            {"type": "readers.ept", "filename": ept_url, "bounds": bounds,
+             "resolution": resolution},
             {"type": "filters.reprojection", "out_srs": target_srs},
             {"type": "filters.range", "limits": "Classification[2:2]"},
             {

@@ -1,5 +1,7 @@
 """CRS conversions for the EPT pipeline. The bbox CRS dance lives here, isolated
 so it can be unit-tested without touching PDAL or the network."""
+import math
+
 from pyproj import Transformer
 
 _TO_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
@@ -34,3 +36,31 @@ def utm_epsg_for_bbox(bbox):
     center_lon = (min_lon + max_lon) / 2.0
     zone = int((center_lon + 180) // 6) + 1
     return 26900 + zone
+
+
+def bbox_area_km2(bbox):
+    """Approximate ground area (km^2) of a lon/lat bbox via cos(lat) scaling.
+
+    bbox = (min_lon, min_lat, max_lon, max_lat). Good enough for picking a grid
+    resolution; one degree of latitude ~= 111.32 km, longitude shrinks by
+    cos(center latitude)."""
+    min_lon, min_lat, max_lon, max_lat = bbox
+    center_lat = (min_lat + max_lat) / 2.0
+    height_km = abs(max_lat - min_lat) * 111.32
+    width_km = abs(max_lon - min_lon) * 111.32 * math.cos(math.radians(center_lat))
+    return width_km * height_km
+
+
+def auto_resolution(bbox):
+    """Pick a DTM grid resolution (metres) from a lon/lat bbox's area.
+
+    Larger areas get coarser grids so big requests stay fast: area < 0.25 km^2
+    -> 1.0 m; < 2 -> 2.0; < 10 -> 3.0; else 5.0."""
+    area = bbox_area_km2(bbox)
+    if area < 0.25:
+        return 1.0
+    if area < 2.0:
+        return 2.0
+    if area < 10.0:
+        return 3.0
+    return 5.0

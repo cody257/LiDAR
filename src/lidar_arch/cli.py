@@ -18,8 +18,9 @@ def cli():
               help="Bounding box in lon/lat (WGS84).")
 @click.option("--out", "out_dir", type=click.Path(file_okay=False), required=True,
               help="Output directory.")
-@click.option("--resolution", type=float, default=1.0, show_default=True,
-              help="DTM grid resolution in metres.")
+@click.option("--resolution", default="auto", show_default=True,
+              help="DTM grid resolution in metres, or 'auto' to pick one from "
+                   "the bbox area.")
 @click.option("--products", default="svf,lrm,slope,openness,rrim", show_default=True,
               help="Comma-separated visualization products to generate.")
 @click.option("--resource", default="auto", show_default=True,
@@ -36,6 +37,17 @@ def run(bbox, out_dir, resolution, products, resource, out_srs):
         raise click.ClickException(
             f"Unknown product(s): {', '.join(unknown)}. "
             f"Choose from: {', '.join(KNOWN_PRODUCTS)}.")
+
+    # Resolve the grid resolution: 'auto' -> area-based pick; else an explicit
+    # float. The resulting value feeds BOTH readers.ept and writers.gdal.
+    if str(resolution).lower() == "auto":
+        resolution = geo.auto_resolution(bbox)
+    else:
+        try:
+            resolution = float(resolution)
+        except ValueError:
+            raise click.ClickException(
+                f"Invalid --resolution {resolution!r}: pass a number or 'auto'.")
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

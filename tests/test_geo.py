@@ -46,3 +46,36 @@ def test_utm_epsg_seattle_zone_10():
 def test_utm_epsg_austin_zone_14():
     # Austin center ~-97.7 -> UTM 14N NAD83 -> 26914
     assert geo.utm_epsg_for_bbox((-97.75, 30.26, -97.73, 30.28)) == 26914
+
+
+# --- auto_resolution: grid resolution from bbox area ---------------------------
+
+def _box_km2(km2, lat=33.4467):
+    """A lon/lat bbox centred at (lat) whose ground area is ~km2 (square)."""
+    import math
+    side_m = math.sqrt(km2) * 1000.0
+    dlat = side_m / 111_320.0
+    dlon = side_m / (111_320.0 * math.cos(math.radians(lat)))
+    half_lon, half_lat = dlon / 2.0, dlat / 2.0
+    return (-111.98 - half_lon, lat - half_lat, -111.98 + half_lon, lat + half_lat)
+
+
+def test_auto_resolution_tiny_box_is_1m():
+    # Pueblo Grande box (~0.12 km2) -> finest grid
+    assert geo.auto_resolution((-111.9856, 33.4452, -111.9816, 33.4482)) == 1.0
+
+
+def test_auto_resolution_small_area_1m():
+    assert geo.auto_resolution(_box_km2(0.1)) == 1.0
+
+
+def test_auto_resolution_medium_area_2m():
+    assert geo.auto_resolution(_box_km2(1.0)) == 2.0
+
+
+def test_auto_resolution_large_area_3m():
+    assert geo.auto_resolution(_box_km2(5.0)) == 3.0
+
+
+def test_auto_resolution_huge_area_5m():
+    assert geo.auto_resolution(_box_km2(50.0)) == 5.0
