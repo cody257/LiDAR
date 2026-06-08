@@ -20,6 +20,20 @@ const LEGEND_MIN = 0.2, LEGEND_MAX = 40; // legend axis (data goes higher but fl
 const EMPTY = { type: "FeatureCollection", features: [] };
 const state = { bbox: null, matches: [], best: null };
 
+// ---- pipeline run / overlay ----
+const PRODUCTS = [
+  { key: "lrm",      label: "LRM" },
+  { key: "rrim",     label: "RRIM" },
+  { key: "svf",      label: "SVF" },
+  { key: "slope",    label: "Slope" },
+  { key: "openness", label: "Openness" },
+];
+const DEFAULT_PRODUCT = "lrm";
+// `run` holds the live overlay: the response urls, the bbox it was made for,
+// the currently shown product, and the opacity. Null when no overlay is up.
+let run = null;
+let running = false;
+
 // computed once coverage loads: per-feature [minx,miny,maxx,maxy] aligned with features array
 let coverage = null;        // the loaded FeatureCollection
 let featureBboxes = [];     // parallel array of bboxes
@@ -240,6 +254,97 @@ function buildCommand() {
   return `lidar-arch run --bbox ${w} ${s} ${e} ${n} --resource ${state.best.name} --out out/site`;
 }
 
+// ---------------- pipeline run + map overlay ----------------
+// Image-source corners for a [w,s,e,n] bbox: TL, TR, BR, BL (MapLibre order).
+function overlayCoords(bbox) {
+  const [w, s, e, n] = bbox;
+  return [[w, n], [e, n], [e, s], [w, s]];
+}
+
+// Put (or replace) the raster overlay on the map for the active product.
+function showOverlay() {
+  if (!mapReady || !run) return;
+  const url = run.urls[run.product];
+  const coordinates = overlayCoords(run.bbox);
+
+  const src = map.getSource("result");
+  if (src) {
+    src.updateImage({ url, coordinates });
+  } else {
+    map.addSource("result", { type: "image", url, coordinates });
+    // Raster sits above coverage; insert UNDER the draw box so the outline stays visible.
+    const before = map.getLayer("draw-fill") ? "draw-fill" : undefined;
+    map.addLayer({
+      id: "result-layer", type: "raster", source: "result",
+      paint: { "raster-opacity": run.opacity, "raster-fade-duration": 0 },
+    }, before);
+  }
+}
+
+function setOverlayProduct(key) {
+  if (!run || run.product === key) return;
+  run.product = key;
+  showOverlay();
+  syncOverlayControls();
+}
+
+function setOverlayOpacity(pct) {
+  if (!run) return;
+  run.opacity = Math.max(0, Math.min(1, pct / 100));
+  if (map.getLayer("result-layer")) {
+    map.setPaintProperty("result-layer", "raster-opacity", run.opacity);
+  }
+}
+
+function clearOverlay() {
+  run = null;
+  if (map.getLayer("result-layer")) map.removeLayer("result-layer");
+  if (map.getSource("result")) map.removeSource("result");
+  render();
+}
+
+// POST the current box to the pipeline, then overlay the result.
+async function runBox() {
+  if (running || !state.bbox || !state.best || !state.best.url) return;
+  running = true;
+  render(); // re-render to show the spinner/disabled state
+
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bbox: state.bbox,
+        resource: state.best.url,
+        products: PRODUCTS.map((p) => p.key),
+      }),
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const j = await res.json();
+        detail = j.detail || j.error || "";
+      } catch (e) { /* non-JSON body */ }
+      throw new Error(detail || `Pipeline failed (HTTP ${res.status}).`);
+    }
+    const data = await res.json();
+    // Replace any prior overlay with the new run.
+    run = {
+      urls: data.urls,
+      bbox: data.bbox || state.bbox,
+      product: DEFAULT_PRODUCT,
+      opacity: run ? run.opacity : 0.85,
+    };
+    running = false;
+    showOverlay();
+    render();
+  } catch (err) {
+    running = false;
+    console.error("runBox failed", err);
+    render(err.message || "Pipeline request failed.");
+  }
+}
+
 // ---------------- draw interaction ----------------
 let drawing = false, start = null;
 const drawBtn = document.getElementById("draw-btn");
@@ -322,7 +427,7 @@ function setBbox(bbox) {
   render();
 }
 
-function render() {
+function render(errorMsg) {
   const el = document.getElementById("result");
   if (!state.bbox) {
     el.innerHTML =
@@ -372,7 +477,19 @@ function render() {
   }
   html += `</div>`;
 
-  // command for the best pick
+  // ---- run the pipeline on the best pick ----
+  html += `<div class="row">
+    <h4>Run pipeline (best pick)</h4>
+    <button class="btn" id="run-btn"${running ? " disabled" : ""}>
+      ${running ? '<span class="spinner"></span>Running pipeline… (~10 s)' : "Run this box"}
+    </button>`;
+  if (errorMsg) {
+    html += `<div class="error" id="run-error">${escapeHtml(errorMsg)}<div class="detail">Check the resource/box and try again.</div></div>`;
+  }
+  html += overlayControlsHtml();
+  html += `</div>`;
+
+  // command for terminal users
   html += `<div class="row">
     <h4>Command (best pick)</h4>
     <div class="cmd" id="cmd">${escapeHtml(buildCommand())}</div>
@@ -383,7 +500,50 @@ function render() {
   </div>`;
 
   el.innerHTML = html;
+  const runBtn = document.getElementById("run-btn");
+  if (runBtn) runBtn.addEventListener("click", runBox);
   document.getElementById("copy-btn").addEventListener("click", copyCommand);
+  wireOverlayControls();
+}
+
+// Overlay controls (product toggle + opacity + clear) — only when an overlay is live.
+function overlayControlsHtml() {
+  if (!run) return "";
+  const toggles = PRODUCTS.map((p) =>
+    `<button class="seg${p.key === run.product ? " active" : ""}" data-product="${p.key}">${p.label}</button>`
+  ).join("");
+  const opct = Math.round(run.opacity * 100);
+  return `<div class="overlay-ctrl">
+    <div class="ov-label">Overlay product</div>
+    <div class="seg-row">${toggles}</div>
+    <div class="ov-label ov-op">Opacity <span id="op-val">${opct}%</span></div>
+    <input type="range" id="op-slider" min="0" max="100" value="${opct}" />
+    <button class="btn ghost ov-clear" id="clear-overlay">Clear overlay</button>
+  </div>`;
+}
+
+function wireOverlayControls() {
+  if (!run) return;
+  document.querySelectorAll(".seg[data-product]").forEach((b) =>
+    b.addEventListener("click", () => setOverlayProduct(b.dataset.product))
+  );
+  const slider = document.getElementById("op-slider");
+  if (slider) {
+    slider.addEventListener("input", () => {
+      setOverlayOpacity(Number(slider.value));
+      const v = document.getElementById("op-val");
+      if (v) v.textContent = `${slider.value}%`;
+    });
+  }
+  const clr = document.getElementById("clear-overlay");
+  if (clr) clr.addEventListener("click", clearOverlay);
+}
+
+// Update active toggle highlight without a full re-render (called on product switch).
+function syncOverlayControls() {
+  document.querySelectorAll(".seg[data-product]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.product === (run && run.product))
+  );
 }
 
 function copyCommand() {
