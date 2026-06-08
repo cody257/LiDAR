@@ -26,3 +26,23 @@ def test_bbox_within_extent():
     outside = (-13000000.0, 3953000.0, -12999000.0, 3954000.0)
     assert geo.bbox_within(inside, EXTENT) is True
     assert geo.bbox_within(outside, EXTENT) is False
+
+
+def test_utm_epsg_phoenix_zone_12():
+    # Phoenix center ~-111.98 -> UTM 12N NAD83 -> 26912
+    assert geo.utm_epsg_for_bbox((-111.9856, 33.4452, -111.9816, 33.4482)) == 26912
+
+
+def test_utm_epsg_denver_zone_13():
+    # Denver center ~-105 -> UTM 13N NAD83 -> 26913
+    assert geo.utm_epsg_for_bbox((-105.01, 39.73, -104.99, 39.75)) == 26913
+
+
+def test_utm_epsg_seattle_zone_10():
+    # Seattle center ~-122.3 -> UTM 10N NAD83 -> 26910
+    assert geo.utm_epsg_for_bbox((-122.34, 47.59, -122.32, 47.61)) == 26910
+
+
+def test_utm_epsg_austin_zone_14():
+    # Austin center ~-97.7 -> UTM 14N NAD83 -> 26914
+    assert geo.utm_epsg_for_bbox((-97.75, 30.26, -97.73, 30.28)) == 26914

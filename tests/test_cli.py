@@ -53,3 +53,56 @@ def test_run_rejects_out_of_coverage(tmp_path):
         "--out", str(tmp_path / "o")])
     assert r.exit_code != 0
     assert "coverage" in r.output.lower()
+
+
+# --- generalized --resource / --out-srs ---------------------------------------
+
+DENVER_BBOX = ["-105.01", "39.73", "-104.99", "39.75"]
+DENVER_EPT = ("https://s3-us-west-2.amazonaws.com/usgs-lidar-public/"
+              "AZ_MaricopaPinal_1_2020/ept.json")
+
+
+def _capture_fetch(monkeypatch, seen):
+    """Patch the pipeline and record the Resource handed to fetch_dtm."""
+    monkeypatch.setattr(
+        fetch, "fetch_dtm",
+        lambda *a, **k: (seen.update(resource=a[1]), a[2])[1])
+    monkeypatch.setattr(dem, "fill_holes", lambda src, out, **k: out)
+    for name in ("svf", "lrm", "slope", "openness", "rrim"):
+        monkeypatch.setattr(viz, name, lambda *a, **k: a[1])
+
+
+def test_run_resource_url_uses_ept_and_auto_utm(monkeypatch, tmp_path):
+    # Denver bbox with an explicit EPT URL: out-srs auto must derive 26913,
+    # the URL must reach fetch, and the Phoenix coverage check must be skipped.
+    seen = {}
+    _capture_fetch(monkeypatch, seen)
+    r = CliRunner().invoke(cli.cli, [
+        "run", "--bbox", *DENVER_BBOX, "--out", str(tmp_path / "o"),
+        "--resource", DENVER_EPT])
+    assert r.exit_code == 0, r.output
+    assert seen["resource"].ept_url == DENVER_EPT
+    assert seen["resource"].target_srs == "EPSG:26913"
+    assert "coverage" not in r.output.lower()
+
+
+def test_run_default_uses_phoenix_and_auto_resolves_26912(monkeypatch, tmp_path):
+    # No --resource: Phoenix collection, and out-srs auto naturally yields 26912.
+    seen = {}
+    _capture_fetch(monkeypatch, seen)
+    r = CliRunner().invoke(cli.cli, [
+        "run", "--bbox", *BBOX, "--out", str(tmp_path / "o")])
+    assert r.exit_code == 0, r.output
+    assert seen["resource"].name == "AZ_MaricopaPinal_1_2020"
+    assert seen["resource"].target_srs == "EPSG:26912"
+
+
+def test_run_explicit_out_srs_passthrough(monkeypatch, tmp_path):
+    # An explicit --out-srs overrides auto for an arbitrary resource.
+    seen = {}
+    _capture_fetch(monkeypatch, seen)
+    r = CliRunner().invoke(cli.cli, [
+        "run", "--bbox", *DENVER_BBOX, "--out", str(tmp_path / "o"),
+        "--resource", DENVER_EPT, "--out-srs", "EPSG:6342"])
+    assert r.exit_code == 0, r.output
+    assert seen["resource"].target_srs == "EPSG:6342"
