@@ -1,0 +1,20 @@
+{
+  // lidar-arch Worker — serves the map app and runs boxes through the container.
+  "name": "lidar-arch",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-06-01",
+
+  // static map app (public/) served via the ASSETS binding
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  // result PNGs are cached/served from R2 (simulated locally by wrangler dev)
+  "r2_buckets": [
+    { "binding": "RESULTS", "bucket_name": "lidar-results" }
+  ],
+
+  // local dev points at the Docker container on :8080.
+  // (Production swaps this for a Cloudflare Container binding — added at deploy.)
+  "vars": {
+    "CONTAINER_URL": "http://127.0.0.1:8080"
+  }
+}

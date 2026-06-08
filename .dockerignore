@@ -1,0 +1,9 @@
+# Keep the Docker build context tiny: the image only needs the package + container files.
+*
+!pyproject.toml
+!src
+!web
+web/node_modules
+web/.wrangler
+web/data
+web/public
