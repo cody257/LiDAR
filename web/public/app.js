@@ -31,7 +31,7 @@ const map = new maplibregl.Map({
   center: [-98.5, 39.5], // continental US
   zoom: 3.4,
 });
-map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
 // `mapReady` = the basemap style has painted and the draw layers exist.
