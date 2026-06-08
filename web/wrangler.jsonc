@@ -4,6 +4,11 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-06-01",
 
+  // Local dev only: don't have wrangler build/manage the container (unsupported on
+  // Windows). `wrangler dev` reaches the pipeline via CONTAINER_URL (web/.dev.vars)
+  // -> the standalone Docker container on :8080. Does NOT affect `wrangler deploy`.
+  "dev": { "enable_containers": false },
+
   // static map app (public/) served via the ASSETS binding
   "assets": { "directory": "./public", "binding": "ASSETS" },
 
@@ -12,9 +17,31 @@
     { "binding": "RESULTS", "bucket_name": "lidar-results" }
   ],
 
-  // local dev points at the Docker container on :8080.
-  // (Production swaps this for a Cloudflare Container binding — added at deploy.)
-  "vars": {
-    "CONTAINER_URL": "http://127.0.0.1:8080"
-  }
+  // The pipeline container. `wrangler deploy` builds ./container/Dockerfile with
+  // build context ./container (which ships the lidar-arch wheel) and pushes it to
+  // Cloudflare's registry. The container runs as a Durable Object (below).
+  "containers": [
+    {
+      "class_name": "LidarContainer",
+      "image": "./container/Dockerfile",
+      "image_build_context": "./container",
+      "instance_type": "standard-2",
+      "max_instances": 5
+    }
+  ],
+
+  // LidarContainer is a Durable Object; the Worker reaches the container via this
+  // binding (env.LIDAR) in production (when CONTAINER_URL is unset).
+  "durable_objects": {
+    "bindings": [
+      { "name": "LIDAR", "class_name": "LidarContainer" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["LidarContainer"] }
+  ]
+
+  // NOTE: no CONTAINER_URL var in production -> the Worker uses the LIDAR binding.
+  // Local dev sets CONTAINER_URL in web/.dev.vars (gitignored) so `wrangler dev`
+  // hits the Docker container on :8080 instead.
 }

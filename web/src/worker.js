@@ -4,12 +4,24 @@
  *    container, caches the PNGs in R2 (per product), returns result URLs.
  *  - GET  /api/result/:key/:product.png -> serves a cached PNG from R2.
  *
- * Local dev reaches the pipeline at env.CONTAINER_URL (the Docker container on
- * :8080). Production will swap that for the Cloudflare Container binding (B4).
+ * Container access has two modes:
+ *  - Production (Cloudflare): no CONTAINER_URL var, so we reach the pipeline
+ *    through the LidarContainer Durable Object binding (env.LIDAR).
+ *  - Local dev: web/.dev.vars sets CONTAINER_URL=http://127.0.0.1:8080, so we
+ *    fetch the Docker container directly. R2 caching is identical either way.
  */
+import { Container, getContainer } from "@cloudflare/containers";
 
 const PRODUCTS = ["svf", "lrm", "slope", "openness", "rrim"];
 const DEFAULT_PRODUCTS = ["lrm", "rrim", "svf"];
+
+/* The pipeline container as a Durable Object. `wrangler deploy` builds the image
+ * (wrangler.jsonc `containers[]`) and runs it on demand; getContainer(env.LIDAR)
+ * returns a stub whose .fetch() proxies to the container's defaultPort. */
+export class LidarContainer extends Container {
+  defaultPort = 8080;       // server.py listens here
+  sleepAfter = "5m";        // stop the instance after 5m idle
+}
 
 export default {
   async fetch(request, env) {
@@ -65,16 +77,9 @@ async function handleRun(request, env) {
   const missing = products.filter((p) => !present[p]);
 
   if (missing.length) {
-    const base = (env.CONTAINER_URL || "").replace(/\/+$/, "");
-    if (!base) return json({ error: "CONTAINER_URL not configured" }, 500);
-
     let resp;
     try {
-      resp = await fetch(`${base}/run`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bbox, resource, products: missing, resolution }),
-      });
+      resp = await runPipeline(env, { bbox, resource, products: missing, resolution });
     } catch (e) {
       return json({ error: "pipeline container unreachable", detail: String(e) }, 502);
     }
@@ -99,6 +104,24 @@ async function handleRun(request, env) {
     cached: missing.length === 0,
     urls: Object.fromEntries(products.map((p) => [p, `/api/result/${key}/${p}.png`])),
   });
+}
+
+/* POST the run payload to the pipeline and return the raw Response.
+ * - Local dev: env.CONTAINER_URL is set (web/.dev.vars) -> fetch the Docker container.
+ * - Production: no CONTAINER_URL -> go through the LidarContainer DO binding (env.LIDAR).
+ * The container's HTTP API is identical in both cases (POST /run). */
+function runPipeline(env, payload) {
+  const body = JSON.stringify(payload);
+  const headers = { "content-type": "application/json" };
+
+  const base = (env.CONTAINER_URL || "").replace(/\/+$/, "");
+  if (base) {
+    return fetch(`${base}/run`, { method: "POST", headers, body });
+  }
+
+  // No CONTAINER_URL -> production: use the container binding (Durable Object).
+  const stub = getContainer(env.LIDAR, "pipeline");
+  return stub.fetch("http://container/run", { method: "POST", headers, body });
 }
 
 function cacheKey(bbox, resource, resolution) {

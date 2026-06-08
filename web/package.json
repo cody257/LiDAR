@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "container:build": "docker build -f container/Dockerfile -t lidar-arch:dev ..",
+    "container:wheel": "pwsh container/build-wheel.ps1",
+    "container:build": "docker build -t lidar-arch:dev container",
     "container:run": "docker run --rm -p 8080:8080 lidar-arch:dev"
   },
   "devDependencies": {
-    "wrangler": "^3.90.0"
+    "wrangler": "^4.98.0"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
   }
 }

@@ -1,0 +1,7 @@
+# keep the build context (and image) lean — only env.yml, wheels/, server.py are COPYed
+__pycache__/
+*.pyc
+README.md
+build-wheel.ps1
+build-wheel.md
+.dockerignore

@@ -41,3 +41,8 @@ web/node_modules/
 web/.wrangler/
 web/data/
 node_modules/
+
+# Container build artifacts
+web/container/wheels/
+# Local dev secrets / overrides for wrangler dev (CONTAINER_URL etc.)
+web/.dev.vars
