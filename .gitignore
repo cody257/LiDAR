@@ -41,6 +41,10 @@ web/node_modules/
 web/.wrangler/
 web/data/
 node_modules/
+.wrangler/
+
+# Throwaway UI prototype (Variant B was folded into web/); kept locally, not in the repo
+prototype/
 
 # Container build artifacts
 web/container/wheels/
