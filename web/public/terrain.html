@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LiDAR-arch — terrain prototype</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.12.1/proj4.js"></script>
+<link href="styles.css" rel="stylesheet" />
+</head>
+<body>
+  <aside id="side">
+    <header id="side-head">
+      <h1>LiDAR-arch</h1>
+      <p class="purpose">Prototype: streams the USGS bare-earth 1 m DEM for your box straight from USGS and renders it in the browser. No container, no run queue.</p>
+    </header>
+
+    <button id="draw-btn" class="btn">Draw box on map</button>
+
+    <div class="field-group">
+      <div class="grid2">
+        <div class="field"><label for="in-w">min lon</label><input id="in-w" type="number" step="0.0001" inputmode="decimal"></div>
+        <div class="field"><label for="in-s">min lat</label><input id="in-s" type="number" step="0.0001" inputmode="decimal"></div>
+        <div class="field"><label for="in-e">max lon</label><input id="in-e" type="number" step="0.0001" inputmode="decimal"></div>
+        <div class="field"><label for="in-n">max lat</label><input id="in-n" type="number" step="0.0001" inputmode="decimal"></div>
+      </div>
+    </div>
+
+    <section id="result" class="result">
+      <div class="empty muted">Draw a box on the map, or type the four corners above.</div>
+    </section>
+
+    <footer id="side-foot" class="muted">
+      <a href="index.html">Back to the point-cloud picker</a>
+    </footer>
+  </aside>
+
+  <div id="map"></div>
+
+<script src="terrain.js"></script>
+</body>
+</html>
