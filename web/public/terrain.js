@@ -7,7 +7,8 @@
 
 const TNM = "https://tnmaccess.nationalmap.gov/api/v1/products";
 const DATASET = "Digital Elevation Model (DEM) 1 meter";
-const MAX_CELLS = 6e6;     // output grid budget; bigger boxes use a coarser overview
+const MAX_CELLS = 4e6;     // output grid budget; bigger boxes use a coarser overview
+const FETCH_CONCURRENCY = 4; // COG windows decoded at once (bounds peak memory)
 const MAX_SIDE = 4096;     // stay under common WebGL texture limits
 const LRM_RADIUS_M = 15;   // matches viz.lrm kernel_radius_m
 
@@ -20,7 +21,7 @@ const EMPTY = { type: "FeatureCollection", features: [] };
 
 // `grid` holds the last loaded DEM; products are recomputed from it on toggle.
 const state = { bbox: null, loading: false, grid: null, product: "lrm", opacity: 0.85,
-                timings: null, sources: [], error: null, imageUrl: null };
+                timings: null, sources: [], error: null, imageUrl: null, lrmStretch: null };
 
 // ---------------- map ----------------
 const map = new maplibregl.Map({
@@ -39,7 +40,7 @@ map.on("load", () => {
     paint: { "line-color": "#b8552e", "line-width": 2 } });
   mapReady = true;
   if (state.bbox) redrawBox(state.bbox);
-  if (state.grid) showImage();
+  if (state.grid) showImage(buildProduct(state.product));
 });
 
 // ---------------- draw + inputs ----------------
@@ -141,28 +142,36 @@ async function loadTerrain() {
     const x0 = minx, top = maxy;
     const dem = new Float32Array(W * H).fill(NaN);
 
-    // 3) fetch the needed window of every tile in parallel, then fill newest-first
+    // 3) read tile windows newest-first, a few at a time, filling as each batch lands;
+    //    stop as soon as every cell has data so older overlapping projects aren't fetched.
     const t1 = performance.now();
-    const windows = await Promise.all(items.map((it) => readWindow(it.downloadURL, x0, top, W, H, res_m)));
-    t.fetch = performance.now() - t1;
     const used = new Map();
-    let filled = 0;
-    windows.forEach((win, k) => {
-      if (!win) return;
-      const n = fillFrom(dem, W, H, x0, top, res_m, win);
-      if (n) {
-        filled += n;
-        const p = items[k].downloadURL.split("/Projects/")[1].split("/")[0];
-        used.set(p, (used.get(p) || 0) + n);
-      }
-    });
+    let filled = 0, decoded = 0, tilesRead = 0;
+    for (let k = 0; k < items.length && filled < W * H; k += FETCH_CONCURRENCY) {
+      const batch = items.slice(k, k + FETCH_CONCURRENCY);
+      const wins = await Promise.all(batch.map((it) => readWindow(it.downloadURL, x0, top, W, H, res_m)));
+      wins.forEach((win, j) => {
+        if (!win) return;
+        tilesRead++;
+        decoded += win.data.byteLength;
+        const n = fillFrom(dem, W, H, x0, top, res_m, win);
+        if (n) {
+          filled += n;
+          const p = batch[j].downloadURL.split("/Projects/")[1].split("/")[0];
+          used.set(p, (used.get(p) || 0) + n);
+        }
+      });
+    }
+    t.fetch = performance.now() - t1;
     if (!filled) throw new Error("USGS tiles were found but hold no data inside this box.");
 
-    state.grid = { dem, W, H, res: res_m, zone, def, x0, top, coverage: filled / (W * H) };
+    state.grid = { dem, W, H, res: res_m, zone, def, x0, top, coverage: filled / (W * H),
+                   tilesRead, decodedMB: decoded / 1e6 };
     state.sources = [...used.entries()].map(([name, n]) => ({ name, share: n / filled }));
-    state.products = {};
-    t.compute = buildProduct(state.product);
-    t.render = await showImage();
+    const tc = performance.now();
+    const rgba = buildProduct(state.product);
+    t.compute = performance.now() - tc;
+    t.render = await showImage(rgba);
     t.total = performance.now() - t0;
     state.timings = t;
   } catch (err) {
@@ -229,6 +238,7 @@ function gradients(g) {
   for (let r = 1; r < H - 1; r++) {
     for (let c = 1; c < W - 1; c++) {
       const i = r * W + c;
+      if (Number.isNaN(dem[i])) continue;              // a hole stays a hole; NaN neighbours propagate
       gx[i] = (dem[i + 1] - dem[i - 1]) / (2 * res);   // dz/dx, east
       gy[i] = (dem[i - W] - dem[i + W]) / (2 * res);   // dz/dy, north
     }
@@ -236,29 +246,51 @@ function gradients(g) {
   return { gx, gy };
 }
 
+// Kernel half-width in cells. Coarse grids can't hold the 15 m radius, so the
+// radius actually used (R * res) is reported in the sidebar.
+function lrmRadiusPx(res) {
+  return Math.max(2, Math.round(LRM_RADIUS_M / res));
+}
+
+// LRM = elevation minus its mean over a (2R+1)^2 square of valid cells.
+// Separable running sums keep memory at ~10 bytes/cell; values are offset by a
+// reference elevation so the float32 row sums stay precise.
 function lrmArray(g) {
   const { dem, W, H, res } = g;
-  const R = Math.max(2, Math.round(LRM_RADIUS_M / res));
-  const S = new Float64Array((W + 1) * (H + 1)), N = new Float64Array((W + 1) * (H + 1));
+  const R = lrmRadiusPx(res);
+  let ref = 0;
+  for (let i = 0; i < dem.length; i++) if (!Number.isNaN(dem[i])) { ref = dem[i]; break; }
+
+  const hs = new Float32Array(W * H), hn = new Uint16Array(W * H);
   for (let r = 0; r < H; r++) {
-    let rs = 0, rn = 0;
+    const o = r * W;
+    let s = 0, n = 0;
+    for (let c = 0; c < Math.min(R, W); c++) {
+      const v = dem[o + c];
+      if (!Number.isNaN(v)) { s += v - ref; n++; }
+    }
     for (let c = 0; c < W; c++) {
-      const v = dem[r * W + c];
-      if (!Number.isNaN(v)) { rs += v; rn++; }
-      const k = (r + 1) * (W + 1) + c + 1;
-      S[k] = S[k - W - 1] + rs; N[k] = N[k - W - 1] + rn;
+      if (c + R < W) { const v = dem[o + c + R]; if (!Number.isNaN(v)) { s += v - ref; n++; } }
+      if (c - R - 1 >= 0) { const v = dem[o + c - R - 1]; if (!Number.isNaN(v)) { s -= v - ref; n--; } }
+      hs[o + c] = s; hn[o + c] = n;
     }
   }
+
   const out = new Float32Array(W * H).fill(NaN);
+  const cs = new Float64Array(W), cn = new Int32Array(W);
+  const addRow = (r, sign) => {
+    const o = r * W;
+    for (let c = 0; c < W; c++) { cs[c] += sign * hs[o + c]; cn[c] += sign * hn[o + c]; }
+  };
+  for (let r = 0; r < Math.min(R, H); r++) addRow(r, 1);
   for (let r = 0; r < H; r++) {
-    const ra = Math.max(0, r - R), rb = Math.min(H, r + R + 1);
+    if (r + R < H) addRow(r + R, 1);
+    if (r - R - 1 >= 0) addRow(r - R - 1, -1);
+    const o = r * W;
     for (let c = 0; c < W; c++) {
-      const v = dem[r * W + c];
-      if (Number.isNaN(v)) continue;
-      const ca = Math.max(0, c - R), cb = Math.min(W, c + R + 1);
-      const a = ra * (W + 1) + ca, b = ra * (W + 1) + cb, d = rb * (W + 1) + ca, e = rb * (W + 1) + cb;
-      const n = N[e] - N[b] - N[d] + N[a];
-      out[r * W + c] = v - (S[e] - S[b] - S[d] + S[a]) / n;
+      const v = dem[o + c];
+      if (Number.isNaN(v) || !cn[c]) continue;
+      out[o + c] = v - ref - cs[c] / cn[c];
     }
   }
   return out;
@@ -287,16 +319,16 @@ function ramp(stops, t) {
 const DIVERGING = [[0, [33, 102, 172]], [0.5, [247, 247, 247]], [1, [178, 24, 43]]];
 const SLOPE = [[0, [252, 253, 191]], [0.35, [252, 137, 97]], [0.7, [183, 55, 121]], [1, [0, 0, 4]]];
 
-// Fill an RGBA buffer for one product; NaN cells stay transparent (no invented ground).
+// RGBA buffer for one product; NaN cells stay transparent (no invented ground).
+// Only the shown product is kept, so switching recomputes rather than caching all three.
 function buildProduct(key) {
   const g = state.grid;
-  if (state.products[key]) return 0;
-  const t0 = performance.now();
   const { W, H } = g;
   const rgba = new Uint8ClampedArray(W * H * 4);
   if (key === "lrm") {
     const l = lrmArray(g);
     const v = percentileAbs(l, 0.98);
+    state.lrmStretch = v;
     for (let i = 0; i < l.length; i++) {
       if (Number.isNaN(l[i])) continue;
       const c = ramp(DIVERGING, 0.5 + l[i] / (2 * v));
@@ -319,19 +351,17 @@ function buildProduct(key) {
       }
     }
   }
-  state.products[key] = rgba;
-  return performance.now() - t0;
+  return rgba;
 }
 
 // ---------------- overlay ----------------
-async function showImage() {
+async function showImage(rgba) {
   const g = state.grid;
   if (!mapReady || !g) return 0;
   const t0 = performance.now();
-  buildProduct(state.product);
   const canvas = document.createElement("canvas");
   canvas.width = g.W; canvas.height = g.H;
-  canvas.getContext("2d").putImageData(new ImageData(state.products[state.product], g.W, g.H), 0, 0);
+  canvas.getContext("2d").putImageData(new ImageData(rgba, g.W, g.H), 0, 0);
   const blob = await new Promise((ok) => canvas.toBlob(ok));
   const url = URL.createObjectURL(blob);
 
@@ -356,7 +386,7 @@ async function setProduct(key) {
   if (state.product === key || !state.grid) return;
   state.product = key;
   const t0 = performance.now();
-  await showImage();
+  await showImage(buildProduct(key));
   state.switchMs = performance.now() - t0;
   render();
 }
@@ -380,10 +410,12 @@ function render() {
       <div class="ov-label">Product</div><div class="seg-row">${toggles}</div>
       <div class="ov-label ov-op">Opacity <span id="op-val">${Math.round(state.opacity * 100)}%</span></div>
       <input type="range" id="op-slider" min="0" max="100" value="${Math.round(state.opacity * 100)}" />
+      ${state.product === "lrm" ? lrmLegendHtml(g) : ""}
     </div>`;
     html += `<div class="row"><h4>Source</h4>
       <div class="muted" style="font-size:12.5px">USGS 3DEP 1 m bare-earth DEM, shown at ${g.res} m, UTM ${g.zone}N.
-      Data covers ${Math.round(g.coverage * 100)}% of the box; uncovered areas stay blank.</div>
+      Data covers ${Math.round(g.coverage * 100)}% of the loaded rectangle (your box plus a small margin); uncovered areas stay blank.
+      Read ${g.tilesRead} tile window(s), ${g.decodedMB.toFixed(1)} MB decoded.</div>
       ${state.sources.map((s) => `<div class="mono" style="font-size:12px">${escapeHtml(s.name)} · ${Math.round(s.share * 100)}%</div>`).join("")}
     </div>`;
   }
@@ -404,6 +436,17 @@ function render() {
     document.getElementById("op-val").textContent = `${slider.value}%`;
     if (map.getLayer("dem-layer")) map.setPaintProperty("dem-layer", "raster-opacity", state.opacity);
   });
+}
+
+// What LRM colours mean, including the radius actually used at this grid size.
+function lrmLegendHtml(g) {
+  const radius = lrmRadiusPx(g.res) * g.res;
+  const note = radius === LRM_RADIUS_M ? "" :
+    ` (${LRM_RADIUS_M} m isn't possible at ${g.res} m cells; draw a smaller box for finer relief)`;
+  const span = state.lrmStretch != null ? ` Full colour = ±${state.lrmStretch.toFixed(2)} m.` : "";
+  return `<div class="muted" style="font-size:12.5px;margin-top:8px">
+    <b style="color:#b2182b">Red</b> = higher, <b style="color:#2166ac">blue</b> = lower than the
+    average ground within ${radius} m${note}. Not height above sea level.${span}</div>`;
 }
 
 function escapeHtml(s) {
